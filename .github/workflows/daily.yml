@@ -1,0 +1,54 @@
+name: Daily ML Inventory
+
+on:
+  schedule:
+    - cron: "0 16 * * *"   # 16:00 UTC ≈ 11:00 CDMX
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run report
+        env:
+          ML_APP_ID: ${{ secrets.ML_APP_ID }}
+          ML_APP_SECRET: ${{ secrets.ML_APP_SECRET }}
+          ML_REFRESH_TOKEN: ${{ secrets.ML_REFRESH_TOKEN }}
+          ML_USER_ID: ${{ secrets.ML_USER_ID }}
+          ML_SELLER_ID: ${{ secrets.ML_SELLER_ID }}
+        run: |
+          python -m ml_inventory.main
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: inventory-excel
+          path: reports/**/inventory_*.xlsx
+
+      - name: Commit reports (optional)
+        if: always()
+        env:
+          GIT_USER_NAME: ${{ secrets.GIT_USER_NAME }}
+          GIT_USER_EMAIL: ${{ secrets.GIT_USER_EMAIL }}
+        run: |
+          git config user.name "${GIT_USER_NAME:-github-actions}"
+          git config user.email "${GIT_USER_EMAIL:-actions@github.com}"
+          git add reports || true
+          git commit -m "chore: update inventory report" || echo "nothing to commit"
+          git push || echo "push skipped"
