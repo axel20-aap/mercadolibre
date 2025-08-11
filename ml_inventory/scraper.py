@@ -14,33 +14,45 @@ HEADERS = {
 }
 
 def probe_stock_from_page(url: str, timeout: int = 30) -> Tuple[Optional[str], Optional[bool], Optional[str]]:
-    # Intenta pedir la página; si falla, no rompas el flujo
+    # 1) Pide la página con headers de navegador y maneja 4xx/5xx
     try:
-        r = requests.get(url, headers=HEADERS, timeout=timeout)
+        r = requests.get(url, headers=HEADERS, timeout=timeout, allow_redirects=True)
         r.raise_for_status()
+        html = r.text
     except requests.RequestException as e:
         status = getattr(getattr(e, "response", None), "status_code", None)
         badge = f"HTTP{status}" if status else "HTTPERR"
         return None, None, badge
 
-    soup = BeautifulSoup(r.text, "lxml")
+    # 2) Algunas respuestas pueden ser JSON/script (captcha/login). No rompas.
+    if html.lstrip().startswith("{") or html.lstrip().startswith("<script"):
+        return None, None, "NONHTML"
+
+    # 3) Parse robusto: usa el parser de HTML estándar y captura errores de parseo
+    try:
+        soup = BeautifulSoup(html, "html.parser")
+    except Exception:
+        return None, None, "PARSE"
+
     title = soup.title.text.strip() if soup.title else None
 
-    # Texto plano en minúsculas para buscar señales de stock
-    texts = " ".join(t.get_text(" ", strip=True) for t in soup.find_all()).lower()
+    # 4) Heurísticas simples de stock
+    texts_low = " ".join(t.get_text(" ", strip=True) for t in soup.find_all()).lower()
 
-    has_stock = None
-    stock_text = None
+    has_stock: Optional[bool] = None
+    stock_text: Optional[str] = None
 
-    # heurísticas sencillas
-    if "+50" in texts or "+ 50" in texts or "más de 50" in texts or "mas de 50" in texts:
+    if "+50" in texts_low or "+ 50" in texts_low or "más de 50" in texts_low or "mas de 50" in texts_low:
         has_stock = True
         stock_text = "+50"
-    elif "últimas disponibles" in texts or "ultimas disponibles" in texts or "en stock" in texts or "stock disponible" in texts or "disponibles" in texts:
+    elif any(s in texts_low for s in ["últimas disponibles", "ultimas disponibles", "en stock", "stock disponible", "disponibles"]):
         has_stock = True
         stock_text = "en stock"
-    elif "sin stock" in texts or "no disponible" in texts or "agotado" in texts:
+    elif any(s in texts_low for s in ["sin stock", "no disponible", "agotado"]):
         has_stock = False
         stock_text = "sin stock"
+    elif any(s in texts_low for s in ["inicia sesión", "inicia sesion", "captcha", "seguridad", "verifica"]):
+        # pistas de login/captcha
+        return title, None, "LOGIN"
 
     return title, has_stock, stock_text
