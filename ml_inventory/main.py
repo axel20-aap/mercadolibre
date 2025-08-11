@@ -78,3 +78,4 @@ elif has_stock is False:
 else:
     value = badge or "?"
 
+
