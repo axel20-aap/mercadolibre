@@ -68,3 +68,13 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+title, has_stock, badge = probe_stock_from_page(row.url)
+
+if has_stock is True:
+    value = "sí"
+elif has_stock is False:
+    value = "no"
+else:
+    value = badge or "?"
+
