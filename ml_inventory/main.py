@@ -78,7 +78,22 @@ def resolve_inventory(api: MercadoLibreAPI, row: InputRow) -> Tuple[str, str, st
     else:
         value = badge or ""
 
-    return (row.sku or row.url, title_for_r
+    return (row.sku or row.url, title_for_report, value)
 
 
+def main():
+    cfg = read_config()
+    api = MercadoLibreAPI()
+    today = datetime.now()
 
+    rows: List[Row] = []
+    for row in cfg:
+        sku, product, value = resolve_inventory(api, row)
+        rows.append(Row(sku=sku, product=product, brand=row.brand, value=value))
+
+    path = ExcelReport(today).write(rows)  # si tu clase usa .save(rows), cámbialo aquí
+    print(f"Wrote: {path}")
+
+
+if __name__ == "__main__":
+    main()
